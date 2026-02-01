@@ -1,23 +1,20 @@
 import React, { useState, createContext, useContext, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { 
-  Wifi, Settings, Zap, Lightbulb, Fan, Tv, Thermometer, 
-  Droplets, Activity, Sun, Layers, Plus, Trash, Server, 
-  CheckCircle, AlertCircle, LogOut, Wind, Lock, User 
+  Wifi, Settings, Zap, Lightbulb, Fan, Tv, Thermometer, Droplets, Activity, Sun, Layers, 
+  Plus, Trash, Server, CheckCircle, AlertCircle, LogOut, Lock, User, Clock, Users, Edit, Save, X, Wind, Mic 
 } from 'lucide-react';
 import './App.css';
 
-// --- 1. SISTEMA DE NOTIFICACIONES (TOAST) ---
+// --- TOAST ---
 const ToastContext = createContext();
 const ToastProvider = ({ children }) => {
   const [toasts, setToasts] = useState([]);
-
   const addToast = (msg, type = 'success') => {
     const id = Date.now();
     setToasts(prev => [...prev, { id, msg, type }]);
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3000);
   };
-
   return (
     <ToastContext.Provider value={addToast}>
       {children}
@@ -26,8 +23,7 @@ const ToastProvider = ({ children }) => {
           <div key={t.id} className={`toast ${t.type}`} style={{
             background: t.type === 'error' ? 'rgba(239, 68, 68, 0.9)' : 'rgba(16, 185, 129, 0.9)',
             color:'white', padding:'12px 20px', borderRadius:10, marginBottom:10, 
-            display:'flex', alignItems:'center', gap:10, backdropFilter:'blur(5px)',
-            boxShadow:'0 5px 15px rgba(0,0,0,0.3)'
+            display:'flex', alignItems:'center', gap:10, backdropFilter:'blur(5px)'
           }}>
             {t.type === 'error' ? <AlertCircle size={18}/> : <CheckCircle size={18}/>}
             <span>{t.msg}</span>
@@ -38,349 +34,353 @@ const ToastProvider = ({ children }) => {
   );
 };
 
-// --- 2. CONTEXTO DE DATOS (APP) ---
+// --- APP CONTEXT ---
 const AppContext = createContext();
-
 const AppProvider = ({ children }) => {
-  // Estado del Usuario
-  const [user, setUser] = useState(() => {
-    const saved = localStorage.getItem('user_session');
-    return saved ? JSON.parse(saved) : null; // Inicia como null para pedir Login
-  });
-  
+  const [user, setUser] = useState(() => JSON.parse(localStorage.getItem('user_session')) || null);
   const [devices, setDevices] = useState([]);
   const [serverUrl, setServerUrl] = useState(localStorage.getItem('server_url') || "http://localhost:3001/api");
-  
   const showToast = useContext(ToastContext);
+  const getHeaders = () => ({ 'Content-Type': 'application/json', 'x-user-id': user?.id });
 
-  // Login Simulado (O contra backend)
-  const login = (u, p) => {
-    if (u === 'admin' && p === '1234') {
-        const userData = { name: "Admin", role: "admin" };
-        setUser(userData);
-        localStorage.setItem('user_session', JSON.stringify(userData));
-        showToast("¡Bienvenido!");
+  const login = async (username, password) => {
+    try {
+      const res = await fetch(`${serverUrl}/login`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ username, password }) });
+      const data = await res.json();
+      if (data.success) {
+        setUser(data.user);
+        localStorage.setItem('user_session', JSON.stringify(data.user));
         return true;
-    } else {
-        showToast("Usuario o contraseña incorrectos", "error");
-        return false;
-    }
-  };
-
-  const logout = () => {
-    setUser(null);
-    localStorage.removeItem('user_session');
-    showToast("Sesión cerrada correctamente");
-  };
-
-  // Actualizar IP del Servidor Backend
-  const updateServerUrl = (url) => {
-    let formatted = url.replace(/\/$/, ""); 
-    if (!formatted.endsWith("/api")) formatted += "/api";
-    setServerUrl(formatted);
-    localStorage.setItem('server_url', formatted);
-    showToast(`Servidor configurado: ${formatted}`);
-  };
-
-  // Cargar dispositivos
-  useEffect(() => {
-    if (user) {
-      const localDevs = localStorage.getItem('my_devices');
-      if (localDevs) {
-        setDevices(JSON.parse(localDevs));
-      } else {
-        setDevices([{ id: 1, name: "Sala Demo", ip: "192.168.1.50", location: "Planta Baja" }]);
       }
-    }
-  }, [user]);
-
-  // Funciones CRUD
-  const addDevice = (newDev) => {
-    const updated = [...devices, { ...newDev, id: Date.now() }];
-    setDevices(updated);
-    localStorage.setItem('my_devices', JSON.stringify(updated));
-    showToast("Dispositivo agregado");
+      showToast(data.message, "error");
+      return false;
+    } catch (e) { showToast("Error de conexión", "error"); return false; }
   };
 
-  const removeDevice = (id) => {
-    const updated = devices.filter(d => d.id !== id);
-    setDevices(updated);
-    localStorage.setItem('my_devices', JSON.stringify(updated));
-    showToast("Dispositivo eliminado", "error");
+  const logout = () => { setUser(null); localStorage.removeItem('user_session'); };
+
+  const loadDevices = async () => {
+    if (!user) return;
+    try {
+      const res = await fetch(`${serverUrl}/devices`);
+      setDevices(await res.json());
+    } catch (e) { console.error("Error loading devices"); }
   };
+
+  const addDevice = async (dev) => {
+    const res = await fetch(`${serverUrl}/devices`, { method: 'POST', headers: getHeaders(), body: JSON.stringify(dev) });
+    if(res.ok) { loadDevices(); showToast("Dispositivo creado"); }
+  };
+  const editDevice = async (id, dev) => {
+    const res = await fetch(`${serverUrl}/devices/${id}`, { method: 'PUT', headers: getHeaders(), body: JSON.stringify(dev) });
+    if(res.ok) { loadDevices(); showToast("Actualizado"); }
+  };
+  const removeDevice = async (id) => {
+    if(!window.confirm("¿Borrar dispositivo?")) return;
+    const res = await fetch(`${serverUrl}/devices/${id}`, { method: 'DELETE', headers: getHeaders() });
+    if(res.ok) { loadDevices(); showToast("Eliminado", "error"); }
+  };
+  const updateUser = async (id, userData) => {
+      const res = await fetch(`${serverUrl}/users/${id}`, { method: 'PUT', headers: getHeaders(), body: JSON.stringify(userData) });
+      if(res.ok) showToast("Usuario actualizado");
+      else showToast("Error al actualizar", "error");
+  };
+  const syncStatus = async (id, statusVal) => {
+    await fetch(`${serverUrl}/devices/${id}/status`, { method: 'PUT', headers: getHeaders(), body: JSON.stringify({ status: statusVal.toString() }) });
+    setDevices(prev => prev.map(d => d.id === id ? { ...d, status: statusVal.toString() } : d));
+  };
+  useEffect(() => { if (user) loadDevices(); }, [user, serverUrl]);
 
   return (
-    <AppContext.Provider value={{ user, login, logout, devices, addDevice, removeDevice, serverUrl, updateServerUrl }}>
+    <AppContext.Provider value={{ user, login, logout, devices, addDevice, editDevice, removeDevice, updateUser, syncStatus, serverUrl, setServerUrl, getHeaders }}>
       {children}
     </AppContext.Provider>
   );
 };
 
-// --- 3. COMPONENTES UI ---
+// --- UI COMPONENTS ---
+const VoiceControl = ({ onCommand }) => {
+    const [listening, setListening] = useState(false);
+    const startListening = () => {
+        if (!('webkitSpeechRecognition' in window)) { alert("Usa Chrome para voz."); return; }
+        const recognition = new window.webkitSpeechRecognition();
+        recognition.lang = 'es-ES';
+        recognition.onstart = () => setListening(true);
+        recognition.onend = () => setListening(false);
+        recognition.onresult = (e) => onCommand(e.results[0][0].transcript.toLowerCase());
+        recognition.start();
+    };
+    return <button onClick={startListening} className={`mic-btn ${listening ? 'listening' : ''}`}><Mic size={24} color="white"/></button>;
+};
 
 const Navbar = () => {
   const loc = useLocation();
   const navStyle = { color: 'rgba(255,255,255,0.6)', textDecoration:'none', display:'flex', flexDirection:'column', alignItems:'center', fontSize:'0.75rem', gap:4 };
   const activeStyle = { ...navStyle, color: '#6366f1' };
-
   return (
     <nav className="bottom-nav">
-      <Link to="/dashboard" style={loc.pathname === '/dashboard' ? activeStyle : navStyle}>
-        <Zap size={24}/><span>Control</span>
-      </Link>
-      <Link to="/settings" style={loc.pathname === '/settings' ? activeStyle : navStyle}>
-        <Settings size={24}/><span>Ajustes</span>
-      </Link>
+      <Link to="/dashboard" style={loc.pathname === '/dashboard' ? activeStyle : navStyle}><Zap size={24}/><span>Control</span></Link>
+      <Link to="/settings" style={loc.pathname === '/settings' ? activeStyle : navStyle}><Settings size={24}/><span>Cuenta</span></Link>
     </nav>
   );
 };
 
-// PANTALLA DE LOGIN
-const LoginScreen = () => {
-    const { login } = useContext(AppContext);
-    const [u, setU] = useState("");
-    const [p, setP] = useState("");
-
-    return (
-        <div className="container-main" style={{height:'100vh', display:'flex', alignItems:'center', justifyContent:'center'}}>
-            <div className="device-card" style={{width:'100%', maxWidth:'350px', textAlign:'center'}}>
-                <div style={{background:'rgba(99, 102, 241, 0.2)', width:60, height:60, borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 20px auto'}}>
-                    <Lock size={30} color="#6366f1"/>
-                </div>
-                <h2 style={{margin:0}}>Smart Home</h2>
-                <p style={{color:'#94a3b8', marginBottom:30}}>Ingresa tus credenciales</p>
-                
-                <div style={{textAlign:'left', marginBottom:15}}>
-                    <div style={{display:'flex', alignItems:'center', background:'rgba(0,0,0,0.3)', borderRadius:10, padding:'0 10px', border:'1px solid rgba(255,255,255,0.1)'}}>
-                        <User size={18} color="#94a3b8"/>
-                        <input placeholder="Usuario (admin)" value={u} onChange={e=>setU(e.target.value)} style={{background:'transparent', border:'none', color:'white', padding:15, width:'100%', outline:'none'}}/>
-                    </div>
-                </div>
-                <div style={{textAlign:'left', marginBottom:30}}>
-                    <div style={{display:'flex', alignItems:'center', background:'rgba(0,0,0,0.3)', borderRadius:10, padding:'0 10px', border:'1px solid rgba(255,255,255,0.1)'}}>
-                        <Lock size={18} color="#94a3b8"/>
-                        <input type="password" placeholder="Contraseña (1234)" value={p} onChange={e=>setP(e.target.value)} style={{background:'transparent', border:'none', color:'white', padding:15, width:'100%', outline:'none'}}/>
-                    </div>
-                </div>
-
-                <button onClick={() => login(u, p)} style={{width:'100%', padding:15, borderRadius:10, border:'none', background:'#6366f1', color:'white', fontWeight:'bold', fontSize:'1rem', cursor:'pointer', boxShadow:'0 4px 15px rgba(99, 102, 241, 0.4)'}}>
-                    INICIAR SESIÓN
-                </button>
-            </div>
-        </div>
-    );
-};
-
-// TARJETA DE DISPOSITIVO (DASHBOARD)
 const FullNodeCard = ({ device }) => {
-  const [state, setState] = useState({ d4:0, d5:0, d6:0, d7:0, pwm9:0, pwm10:0, temp:24, hum:60, gas:12 });
+  const { syncStatus } = useContext(AppContext);
+  const [state, setState] = useState({ d4: device.status === '1' ? 1 : 0, d5: 0, d6: 0, d7: 0, pwm9: 0, pwm10: 0, temp: 0, gas: 0 });
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+       fetch(`http://${device.ip}/sensors`, { mode: 'cors' }).then(r => r.ok ? r.json() : null)
+        .then(data => data && setState(p => ({...p, temp: data.temp, gas: data.gas}))).catch(() => {}); 
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [device.ip]);
 
   const send = (type, pin, val) => {
     const key = type === 'digital' ? `d${pin}` : `pwm${pin}`;
     setState(prev => ({ ...prev, [key]: val }));
-    
-    // Envío real al ESP
-    fetch(`http://${device.ip}/${type}?pin=${pin}&val=${val}`, { mode: 'no-cors' })
-      .catch(e => console.log("Offline"));
+    fetch(`http://${device.ip}/${type}?pin=${pin}&val=${val}`, { mode: 'no-cors' }).catch(e => console.log("Offline"));
+    if (pin === 4 && type === 'digital') syncStatus(device.id, val);
   };
 
   return (
     <div className="device-card">
       <div className="card-header-row">
-        <div>
-          <h3 style={{margin:0, display:'flex', alignItems:'center', gap:'10px', fontSize:'1.1rem'}}>
-            <Layers color="#6366f1" size={20}/> {device.name}
-          </h3>
-          <small style={{color:'#94a3b8'}}>{device.ip}</small>
-        </div>
-        <div style={{display:'flex', alignItems:'center', color:'#10b981', fontSize:'0.8rem', gap:'5px'}}>
-          <div style={{width:8, height:8, background:'#10b981', borderRadius:'50%', boxShadow:'0 0 10px #10b981'}}></div>
-          Online
-        </div>
+        <div><h3 style={{margin:0, display:'flex', gap:10, fontSize:'1.1rem'}}><Layers color="#6366f1"/> {device.name}</h3><small style={{color:'#94a3b8'}}>{device.ip}</small></div>
+        <div style={{color: device.status === '1' ? '#10b981' : '#64748b', fontSize:'0.8rem'}}>● {device.status === '1' ? 'ON' : 'OFF'}</div>
       </div>
-
       <div className="control-grid">
-        <div className={`control-item ${state.d4 ? 'active' : ''}`} onClick={() => send('digital', 4, state.d4 ? 0 : 1)}>
-          <Lightbulb size={24}/> <span>Luz</span>
-        </div>
-        <div className={`control-item ${state.d5 ? 'active' : ''}`} onClick={() => send('digital', 5, state.d5 ? 0 : 1)}>
-          <Fan size={24}/> <span>Ventilador</span>
-        </div>
-        <div className={`control-item ${state.d6 ? 'active' : ''}`} onClick={() => send('digital', 6, state.d6 ? 0 : 1)}>
-          <Tv size={24}/> <span>Patio</span>
-        </div>
-        <div className={`control-item ${state.d7 ? 'active' : ''}`} onClick={() => send('digital', 7, state.d7 ? 0 : 1)}>
-          <Zap size={24}/> <span>Aux</span>
-        </div>
+        <div className={`control-item ${state.d4 ? 'active' : ''}`} onClick={() => send('digital', 4, state.d4 ? 0 : 1)}><Lightbulb size={24}/><span>{device.d4_name || 'Luz'}</span></div>
+        <div className={`control-item ${state.d5 ? 'active' : ''}`} onClick={() => send('digital', 5, state.d5 ? 0 : 1)}><Fan size={24}/><span>{device.d5_name || 'Vent.'}</span></div>
+        <div className={`control-item ${state.d6 ? 'active' : ''}`} onClick={() => send('digital', 6, state.d6 ? 0 : 1)}><Tv size={24}/><span>{device.d6_name || 'Patio'}</span></div>
+        <div className={`control-item ${state.d7 ? 'active' : ''}`} onClick={() => send('digital', 7, state.d7 ? 0 : 1)}><Zap size={24}/><span>{device.d7_name || 'Aux'}</span></div>
       </div>
-
-      {/* --- AQUÍ ESTÁ EL CAMBIO: DOS SLIDERS (PIN 9 y PIN 10) --- */}
-      
-      {/* Slider PIN 9 (Dimmer Luz) */}
-      <div className="slider-group">
-        <span className="slider-label" style={{display:'flex', justifyContent:'space-between'}}>
-            <span><Sun size={14} style={{verticalAlign:'middle', marginRight:5}}/> Iluminación (Pin 9)</span>
-            <span>{state.pwm9}</span>
-        </span>
-        <input type="range" className="range-slider" min="0" max="255" value={state.pwm9} onChange={(e) => send('pwm', 9, e.target.value)} />
-      </div>
-
-      {/* Slider PIN 10 (Velocidad Motor) */}
-      <div className="slider-group" style={{marginTop: 20}}>
-        <span className="slider-label" style={{display:'flex', justifyContent:'space-between'}}>
-            <span><Wind size={14} style={{verticalAlign:'middle', marginRight:5}}/> Velocidad Motor (Pin 10)</span>
-            <span>{state.pwm10}</span>
-        </span>
-        <input type="range" className="range-slider" min="0" max="255" value={state.pwm10} onChange={(e) => send('pwm', 10, e.target.value)} />
-      </div>
-      {/* -------------------------------------------------------- */}
-
-      <div className="sensors-row" style={{marginTop:25}}>
-        <div className="sensor-badge"><Thermometer size={14}/> {state.temp}°C</div>
-        <div className="sensor-badge"><Droplets size={14}/> {state.hum}%</div>
-        <div className="sensor-badge"><Activity size={14}/> Gas: {state.gas}</div>
+      <div className="slider-group"><span className="slider-label"><span><Sun size={14}/> Luz</span><span>{state.pwm9}</span></span><input type="range" className="range-slider" min="0" max="255" value={state.pwm9} onChange={(e) => send('pwm', 9, e.target.value)} /></div>
+      <div className="slider-group" style={{marginTop:15}}><span className="slider-label"><span><Wind size={14}/> Motor</span><span>{state.pwm10}</span></span><input type="range" className="range-slider" min="0" max="255" value={state.pwm10} onChange={(e) => send('pwm', 10, e.target.value)} /></div>
+      <div className="sensors-container">
+         <div className="sensor-badge" style={{color:'#3b82f6'}}><Thermometer size={20}/><span className="sensor-value">{state.temp}°C</span></div>
+         <div className="sensor-badge" style={{color:'#f97316'}}><Droplets size={20}/><span className="sensor-value">{state.gas}ppm</span></div>
+         <div className="sensor-badge" style={{color:'#8b5cf6'}}><Activity size={20}/><span className="sensor-value">{device.ip}</span></div>
       </div>
     </div>
   );
 };
 
-// --- 4. PANTALLAS ---
-
+// --- PANTALLAS ---
 const DashboardScreen = () => {
-  const { user, devices } = useContext(AppContext);
+  const { user, devices, syncStatus } = useContext(AppContext);
+  const showToast = useContext(ToastContext);
+
+  const handleVoice = (text) => {
+      showToast(`Oído: "${text}"`);
+      const words = text.toLowerCase();
+      const isOn = words.includes("encender") || words.includes("prender") || words.includes("activar");
+      const isOff = words.includes("apagar") || words.includes("desactivar");
+      if (!isOn && !isOff) return; 
+      const val = isOn ? 1 : 0;
+      let found = false;
+
+      devices.forEach(dev => {
+          const checkAndSend = (btnName, pin) => {
+              if (btnName && words.includes(btnName.toLowerCase())) {
+                  fetch(`http://${dev.ip}/digital?pin=${pin}&val=${val}`, {mode:'no-cors'});
+                  if(pin === 4) syncStatus(dev.id, val);
+                  found = true;
+              }
+          };
+          checkAndSend(dev.d4_name, 4); checkAndSend(dev.d5_name, 5);
+          checkAndSend(dev.d6_name, 6); checkAndSend(dev.d7_name, 7);
+      });
+      if(found) showToast(isOn ? "Activando..." : "Apagando...");
+      else showToast("No encontré ese dispositivo", "error");
+  };
+
   return (
     <div className="container-main">
-      <header className="app-header">
-        <h2 style={{fontSize:'1.5rem', margin:0}}>Hola, {user?.name} 👋</h2>
-        <p style={{color:'#94a3b8', margin:0}}>Panel de Control</p>
-      </header>
-
+      <header className="app-header"><h2>Hola, {user?.name} 👋</h2></header>
       <div className="dashboard-grid">
-        {devices.length === 0 ? (
-          <div style={{textAlign:'center', padding:40, color:'#64748b'}}>
-            <p>No hay dispositivos.</p>
-            <p>Ve a <b>Ajustes</b> para agregar uno.</p>
-          </div>
-        ) : (
-          devices.map(d => <FullNodeCard key={d.id} device={d} />)
-        )}
+        {devices.map(d => <FullNodeCard key={d.id} device={d} />)}
       </div>
+      <div style={{position:'fixed', bottom:90, right:20, zIndex:100}}><VoiceControl onCommand={handleVoice}/></div>
       <Navbar />
     </div>
   );
 };
 
 const SettingsScreen = () => {
-  const { devices, addDevice, removeDevice, serverUrl, updateServerUrl, logout } = useContext(AppContext);
-  const [name, setName] = useState("");
-  const [ip, setIp] = useState("");
-  const [tmpServer, setTmpServer] = useState(serverUrl);
+  const { user, devices, addDevice, editDevice, removeDevice, logout, serverUrl, getHeaders, updateUser } = useContext(AppContext);
+  const [tab, setTab] = useState(user.role === 'admin' ? 'devices' : 'profile');
+  
+  // Forms
+  const [editingId, setEditingId] = useState(null);
+  const [formDev, setFormDev] = useState({ name:'', ip:'', location:'', d4_name:'Luz', d5_name:'Vent.', d6_name:'Patio', d7_name:'Aux' });
+  
+  const [usersList, setUsersList] = useState([]);
+  const [editingUser, setEditingUser] = useState(null);
+  const [formUser, setFormUser] = useState({ username:'', password:'', role:'user' });
+  const [newPass, setNewPass] = useState("");
+  const [history, setHistory] = useState([]);
 
-  const handleAdd = () => {
-    if (name && ip) {
-      addDevice({ name, ip, location: "Manual" });
-      setName(""); setIp("");
-    }
+  useEffect(() => {
+    if (tab === 'users') fetch(`${serverUrl}/users`, {headers: getHeaders()}).then(r=>r.json()).then(setUsersList);
+    if (tab === 'history') fetch(`${serverUrl}/history`, {headers: getHeaders()}).then(r=>r.json()).then(setHistory);
+  }, [tab]);
+
+  // Devices CRUD
+  const handleSaveDevice = () => {
+    if (editingId) { editDevice(editingId, formDev); setEditingId(null); }
+    else { addDevice(formDev); }
+    setFormDev({ name:'', ip:'', location:'', d4_name:'Luz', d5_name:'Vent.', d6_name:'Patio', d7_name:'Aux' });
+  };
+  const startEditDev = (d) => { 
+      setEditingId(d.id); 
+      setFormDev({ 
+          name: d.name, ip: d.ip, location: d.location,
+          d4_name: d.d4_name || 'Luz', d5_name: d.d5_name || 'Vent.', 
+          d6_name: d.d6_name || 'Patio', d7_name: d.d7_name || 'Aux'
+      }); 
+  };
+
+  // Users CRUD
+  const handleSaveUser = async () => {
+      if (editingUser) { await updateUser(editingUser, formUser); setEditingUser(null); }
+      else { await fetch(`${serverUrl}/users`, { method: 'POST', headers: getHeaders(), body: JSON.stringify(formUser) }); }
+      setFormUser({ username: '', password: '', role: 'user' });
+      fetch(`${serverUrl}/users`, {headers: getHeaders()}).then(r=>r.json()).then(setUsersList);
+  };
+  const startEditUser = (u) => { setEditingUser(u.id); setFormUser({ username: u.username, password: '', role: u.role }); };
+  const handleDeleteUser = async (id) => {
+    if(!window.confirm("¿Borrar?")) return;
+    await fetch(`${serverUrl}/users/${id}`, { method: 'DELETE', headers: getHeaders() });
+    setUsersList(p => p.filter(u => u.id !== id));
+  };
+  const handleChangeMyPassword = async () => {
+    if(newPass.length<3) return alert("Muy corta");
+    await updateUser(user.id, {password: newPass}); setNewPass("");
   };
 
   return (
     <div className="container-main">
-      <header className="app-header">
-        <h2 style={{fontSize:'1.5rem', margin:0}}>Ajustes ⚙️</h2>
-      </header>
-
-      <div className="dashboard-grid">
-        
-        {/* AGREGAR NODO */}
-        <div className="device-card">
-          <h3 style={{marginTop:0, display:'flex', gap:10}}><Plus color="#6366f1"/> Nuevo Nodo</h3>
-          <div style={{display:'flex', flexDirection:'column', gap:10}}>
-            <input 
-              placeholder="Nombre (ej: Cocina)" 
-              value={name} onChange={e => setName(e.target.value)} 
-              style={{padding:12, borderRadius:10, border:'1px solid rgba(255,255,255,0.1)', background:'rgba(0,0,0,0.3)', color:'white', outline:'none'}}
-            />
-            <input 
-              placeholder="IP ESP (ej: 192.168.1.50)" 
-              value={ip} onChange={e => setIp(e.target.value)} 
-              style={{padding:12, borderRadius:10, border:'1px solid rgba(255,255,255,0.1)', background:'rgba(0,0,0,0.3)', color:'white', outline:'none'}}
-            />
-            <button onClick={handleAdd} style={{padding:12, borderRadius:10, border:'none', background:'#6366f1', color:'white', fontWeight:'bold', cursor:'pointer'}}>
-              Guardar Dispositivo
-            </button>
-          </div>
-        </div>
-
-        {/* CONFIGURAR SERVIDOR */}
-        <div className="device-card">
-          <h3 style={{marginTop:0, display:'flex', gap:10}}><Server color="#10b981"/> Servidor PC</h3>
-          <p style={{fontSize:'0.8rem', color:'#94a3b8'}}>IP de tu computadora (Node.js)</p>
-          <div style={{display:'flex', gap:10}}>
-            <input 
-              value={tmpServer} onChange={e => setTmpServer(e.target.value)} 
-              style={{flex:1, padding:10, borderRadius:10, border:'1px solid rgba(255,255,255,0.1)', background:'rgba(0,0,0,0.3)', color:'white', outline:'none'}}
-            />
-            <button onClick={() => updateServerUrl(tmpServer)} style={{padding:'10px 20px', borderRadius:10, border:'1px solid #10b981', background:'transparent', color:'#10b981', cursor:'pointer'}}>
-              OK
-            </button>
-          </div>
-        </div>
-
-        {/* LISTA DE DISPOSITIVOS */}
-        <div className="device-card">
-          <h3 style={{marginTop:0}}>Mis Dispositivos</h3>
-          {devices.map(d => (
-            <div key={d.id} style={{display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 0', borderBottom:'1px solid rgba(255,255,255,0.05)'}}>
-              <div>
-                <div style={{fontWeight:'bold'}}>{d.name}</div>
-                <div style={{fontSize:'0.8rem', color:'#6366f1'}}>{d.ip}</div>
-              </div>
-              <button onClick={() => removeDevice(d.id)} style={{background:'rgba(239, 68, 68, 0.2)', border:'none', borderRadius:8, padding:8, color:'#ef4444', cursor:'pointer'}}>
-                <Trash size={16}/>
-              </button>
-            </div>
-          ))}
-        </div>
-
-        {/* BOTON CERRAR SESION */}
-        <button onClick={logout} style={{width:'100%', padding:15, borderRadius:15, border:'1px solid #ef4444', background:'transparent', color:'#ef4444', display:'flex', justifyContent:'center', gap:10, cursor:'pointer', fontWeight:'bold'}}>
-          <LogOut size={20}/> CERRAR SESIÓN
-        </button>
-
+      <header className="app-header"><h2>Gestión ⚙️</h2></header>
+      <div className="settings-tabs">
+        {user.role === 'admin' && <button className={`tab-btn ${tab==='devices'?'active':''}`} onClick={()=>setTab('devices')}><Layers size={16}/> Nodos</button>}
+        {user.role === 'admin' && <button className={`tab-btn ${tab==='users'?'active':''}`} onClick={()=>setTab('users')}><Users size={16}/> Usuarios</button>}
+        {user.role === 'admin' && <button className={`tab-btn ${tab==='history'?'active':''}`} onClick={()=>setTab('history')}><Clock size={16}/> Historial</button>}
+        <button className={`tab-btn ${tab==='profile'?'active':''}`} onClick={()=>setTab('profile')}><User size={16}/> Perfil</button>
       </div>
+
+      {user.role === 'admin' && tab === 'devices' && (
+        <>
+          <div className="form-card">
+            <h4>{editingId ? 'Editar Nodo' : 'Nuevo Nodo'}</h4>
+            <div style={{display:'grid', gap:10}}>
+                <input className="input-field" placeholder="Nombre" value={formDev.name} onChange={e=>setFormDev({...formDev, name:e.target.value})}/>
+                <input className="input-field" placeholder="IP" value={formDev.ip} onChange={e=>setFormDev({...formDev, ip:e.target.value})}/>
+                <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:10}}>
+                    <input className="input-field" placeholder="Btn 1" value={formDev.d4_name} onChange={e=>setFormDev({...formDev, d4_name:e.target.value})}/>
+                    <input className="input-field" placeholder="Btn 2" value={formDev.d5_name} onChange={e=>setFormDev({...formDev, d5_name:e.target.value})}/>
+                    <input className="input-field" placeholder="Btn 3" value={formDev.d6_name} onChange={e=>setFormDev({...formDev, d6_name:e.target.value})}/>
+                    <input className="input-field" placeholder="Btn 4" value={formDev.d7_name} onChange={e=>setFormDev({...formDev, d7_name:e.target.value})}/>
+                </div>
+                <button className="btn-primary" onClick={handleSaveDevice}>Guardar</button>
+            </div>
+          </div>
+          <div className="device-card">
+            {devices.map(d => (
+              <div key={d.id} style={{display:'flex', justifyContent:'space-between', padding:'10px 0', borderBottom:'1px solid rgba(255,255,255,0.1)'}}>
+                <div><b>{d.name}</b> <small style={{color:'#6366f1'}}>({d.ip})</small></div>
+                <div style={{display:'flex', gap:10}}>
+                    <button className="btn-icon btn-edit" onClick={()=>startEditDev(d)}><Edit size={18}/></button>
+                    <button className="btn-icon btn-delete" onClick={()=>removeDevice(d.id)}><Trash size={18}/></button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {user.role === 'admin' && tab === 'users' && (
+        <>
+          <div className="form-card">
+            <h4>{editingUser ? 'Editar' : 'Nuevo'}</h4>
+            <input className="input-field" placeholder="Usuario" value={formUser.username} onChange={e=>setFormUser({...formUser, username:e.target.value})}/>
+            <input className="input-field" type="password" placeholder="Pass" value={formUser.password} onChange={e=>setFormUser({...formUser, password:e.target.value})}/>
+            <select className="input-field" value={formUser.role} onChange={e=>setFormUser({...formUser, role:e.target.value})}>
+                <option value="user">Usuario Limitado</option>
+                <option value="admin">Administrador</option>
+            </select>
+            <button className="btn-primary" onClick={handleSaveUser}>{editingUser ? 'Actualizar' : 'Crear'}</button>
+          </div>
+          <div className="table-container">
+            <table className="data-table">
+              <thead><tr><th>Usuario</th><th>Rol</th><th>Acción</th></tr></thead>
+              <tbody>
+                {usersList.map(u => (
+                  <tr key={u.id}><td>{u.username}</td><td>{u.role}</td>
+                    <td>{u.username !== 'admin' && <div style={{display:'flex', gap:5}}><button className="btn-icon btn-edit" onClick={()=>startEditUser(u)}><Edit size={16}/></button><button className="btn-icon btn-delete" onClick={()=>handleDeleteUser(u.id)}><Trash size={16}/></button></div>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {user.role === 'admin' && tab === 'history' && (
+        <div className="table-container">
+          <table className="data-table">
+            <thead><tr><th>User</th><th>Acción</th><th>Hora</th></tr></thead>
+            <tbody>
+              {history.map(h => (
+                <tr key={h.id}><td>{h.username || 'Sistema'}</td><td>{h.action}</td><td>{new Date(h.timestamp).toLocaleTimeString()}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {tab === 'profile' && (
+          <div className="form-card">
+              <h4>Mi Perfil</h4>
+              <p>Cambiar contraseña</p>
+              <input className="input-field" type="password" placeholder="Nueva" value={newPass} onChange={e=>setNewPass(e.target.value)}/>
+              <button className="btn-primary" style={{width:'auto'}} onClick={handleChangeMyPassword}>Actualizar</button>
+              <hr style={{borderColor:'rgba(255,255,255,0.1)', margin:'20px 0'}}/>
+              <button className="btn-primary" onClick={logout} style={{background:'#ef4444'}}>Cerrar Sesión</button>
+          </div>
+      )}
       <Navbar />
     </div>
   );
 };
 
-// --- APP PRINCIPAL CON LÓGICA DE SESIÓN ---
-const AppContent = () => {
-    const { user } = useContext(AppContext);
-    
-    // Si no hay usuario, mostramos SOLO el Login
-    if (!user) {
-        return <LoginScreen />;
-    }
-
-    // Si hay usuario, mostramos el Router con Dashboard y Settings
+const LoginScreen = () => {
+    const { login, setServerUrl, serverUrl } = useContext(AppContext);
+    const [u, setU] = useState(""); const [p, setP] = useState(""); const [showConfig, setShowConfig] = useState(false);
     return (
-        <Router>
-          <Routes>
-            <Route path="/" element={<DashboardScreen />} />
-            <Route path="/dashboard" element={<DashboardScreen />} />
-            <Route path="/settings" element={<SettingsScreen />} /> 
-            <Route path="*" element={<Navigate to="/dashboard" />} />
-          </Routes>
-        </Router>
+        <div className="container-main" style={{height:'100vh', display:'flex', justifyContent:'center', alignItems:'center'}}>
+            <div className="device-card" style={{width:'100%', maxWidth:350, textAlign:'center'}}>
+                {!showConfig ? (
+                    <>
+                        <Lock size={40} color="#6366f1" style={{marginBottom:20}}/>
+                        <h2>Acceso</h2>
+                        <input className="input-field" placeholder="Usuario" onChange={e=>setU(e.target.value)}/>
+                        <input className="input-field" type="password" placeholder="Contraseña" onChange={e=>setP(e.target.value)}/>
+                        <button className="btn-primary" onClick={()=>login(u,p)}>ENTRAR</button>
+                        <p onClick={()=>setShowConfig(true)} style={{fontSize:'0.8rem', marginTop:20, color:'#64748b', cursor:'pointer'}}>Configurar IP</p>
+                    </>
+                ) : (
+                    <>
+                        <Server size={40} color="#10b981" style={{marginBottom:20}}/>
+                        <h2>Conexión</h2>
+                        <input className="input-field" value={serverUrl} onChange={e=>setServerUrl(e.target.value)}/>
+                        <button className="btn-primary" onClick={()=>setShowConfig(false)}>GUARDAR</button>
+                    </>
+                )}
+            </div>
+        </div>
     );
 };
-
-export default function App() {
-  return (
-    <ToastProvider>
-      <AppProvider>
-         <AppContent />
-      </AppProvider>
-    </ToastProvider>
-  );
-}
+const AppContent = () => { const { user } = useContext(AppContext); if (!user) return <LoginScreen />; return <Router><Routes><Route path="/dashboard" element={<DashboardScreen />} /><Route path="/settings" element={<SettingsScreen />} /><Route path="*" element={<Navigate to="/dashboard" />} /></Routes></Router>; };
+export default function App() { return <ToastProvider><AppProvider><AppContent /></AppProvider></ToastProvider>; }

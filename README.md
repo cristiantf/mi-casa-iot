@@ -10,10 +10,12 @@ Este proyecto es una aplicación móvil multiplataforma desarrollada con React y
 
 ## ✨ Características Principales
 
-- **Frontend Moderno:** Interfaz de usuario creada con React y componentes `lucide-react` para una experiencia limpia y moderna.
+- **Frontend Moderno (Glassmorphism):** Interfaz de usuario creada con React y `lucide-react`, con un diseño visual atractivo, efectos de vidrio y animaciones.
+- **Control por Voz:** Comandos de voz integrados para controlar dispositivos (encender/apagar) sin tocar la pantalla.
+- **Gestión Completa:** Panel de administración para gestionar usuarios, roles, dispositivos y visualizar el historial de acciones.
+- **Control de Hardware:** Soporte para control de relés (Digital), dimmers/motores (PWM) y visualización de sensores en tiempo real.
 - **Multiplataforma:** Gracias a Capacitor, la misma base de código se puede ejecutar de forma nativa en Android e iOS.
-- **Backend Ligero:** Servidor Express.js para gestionar la lógica de negocio y la comunicación con la base de datos.
-- **Persistencia de Datos:** Uso de SQLite para un almacenamiento de datos local y eficiente en el servidor.
+- **Backend Robusto:** Servidor Express.js con base de datos SQLite para persistencia de datos, autenticación y lógica de negocio.
 
 ## folder_structure: Estructura del Proyecto
 
